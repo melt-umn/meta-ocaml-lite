@@ -132,6 +132,10 @@ top::Expr ::= e::Expr
           end
         | _ -> error("expected an ast value")
         end;
+      case e1.freeVars of
+      | [] -> right(unit())
+      | vs -> left(s"Run expression ${show(80, e1.pp)} contains free variables ${implode(", ", vs)}")
+      end;
       decorate e1 with {valueEnv = top.valueEnv;}.value;
     };
 }
