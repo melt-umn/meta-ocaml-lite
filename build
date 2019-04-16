@@ -1,0 +1,4 @@
+#!/bin/bash
+
+silver -o metaocaml.jar -I grammars $@ edu:umn:cs:melt:metaocaml:driver
+
