@@ -3,17 +3,22 @@ grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 imports core:monad;
 imports silver:langutil;
 imports silver:langutil:pp;
+imports silver:reflect;
 
 synthesized attribute freeVars::[String];
 
-nonterminal Expr with location, valueEnv, pp, freeVars, value;
+nonterminal Expr with location, valueEnv, pp, freeVars, value<Value>;
 
 abstract production varExpr
 top::Expr ::= id::String
 {
   top.pp = text(id);
   top.freeVars = [id];
-  top.value = right(lookupBy(stringEq, id, top.valueEnv).fromJust);
+  top.value =
+    case lookupBy(stringEq, id, top.valueEnv) of
+    | just(v) -> right(v)
+    | nothing() -> error(s"Lookup of ${id} failed")
+    end;
 }
 
 abstract production intExpr
@@ -82,6 +87,68 @@ top::Expr ::= e1::Expr e2::Expr e3::Expr
       case e1Val of
       | boolValue(b) -> if b then e2.value else e3.value
       | _ -> error("expected a bool value")
+      end;
+    };
+}
+
+-- Meta-constructs
+abstract production quoteExpr
+top::Expr ::= e::Expr
+{
+  top.pp = pp".<${e.pp}>.";
+  
+  local a::AST = reflect(new(e));
+  a.valueEnv = top.valueEnv;
+  top.freeVars = a.freeVars;
+  top.value =
+    do (bindEither, returnEither) {
+      aVal::AST <- a.value;
+      return astValue(aVal);
+    };
+}
+
+abstract production escapeExpr
+top::Expr ::= e::Expr
+{
+  top.pp = pp"(.~${e.pp})";
+  top.freeVars = error("undefined");
+  top.value = error("undefined");
+}
+
+abstract production runExpr
+top::Expr ::= e::Expr
+{
+  top.pp = pp"(.! ${e.pp})";
+  top.freeVars = e.freeVars;
+  top.value =
+    do (bindEither, returnEither) {
+      eVal::Value <- e.value;
+      e1::Expr =
+        case eVal of
+        | astValue(a) ->
+          case reify(a) of
+          | left(msg) -> error(s"Reification of ${show(80, a.pp)} failed: ${msg}")
+          | right(e1) -> e1
+          end
+        | _ -> error("expected an ast value")
+        end;
+      decorate e1 with {valueEnv = top.valueEnv;}.value;
+    };
+}
+
+-- Misc. operators
+abstract production modExpr
+top::Expr ::= e1::Expr e2::Expr
+{
+  top.pp = pp"(${e1.pp} mod ${e2.pp})";
+  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.value =
+    do (bindEither, returnEither) {
+      e1Val::Value <- e1.value;
+      e2Val::Value <- e2.value;
+      case e1Val, e2Val of
+      | intValue(a), intValue(b) -> right(intValue(a % b))
+      | _, _ -> error("expected an int value")
       end;
     };
 }

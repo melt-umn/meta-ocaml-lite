@@ -23,6 +23,7 @@ terminal LParen_t '(';
 terminal RParen_t ')';
 
 terminal App_t '' association = left, precedence = 14;
+terminal Mod_t 'mod' association = left, precedence = 11, lexer classes {Keyword};
 terminal Times_t '*' association = left, precedence = 11;
 terminal Divide_t '/' association = left, precedence = 11;
 terminal Plus_t '+' association = left, precedence = 10;
@@ -36,6 +37,11 @@ terminal Lte_t '<=' association = left, precedence = 7;
 terminal And_t '&&' association = left, precedence = 6;
 terminal Or_t '||' association = left, precedence = 5;
 terminal Arrow_t '->' precedence = 0;
+
+terminal LQuote_t '.<';
+terminal RQuote_t '>.';
+terminal Escape_t '.~' precedence = 13;
+terminal Run_t '.!' precedence = 13;
 
 nonterminal Expr_c with ast<Expr>, location;
 
@@ -54,6 +60,14 @@ concrete productions top::Expr_c
   { top.ast = appExpr(e1.ast, e2.ast, location=top.location); }
 | 'if' e1::Expr_c 'then' e2::Expr_c 'else' e3::Expr_c
   { top.ast = ifExpr(e1.ast, e2.ast, e3.ast, location=top.location); }
+| '.<' e::Expr_c '>.'
+  { top.ast = quoteExpr(e.ast, location=top.location); }
+| '.~' e::Expr_c
+  { top.ast = escapeExpr(e.ast, location=top.location); }
+| '.!' e::Expr_c
+  { top.ast = runExpr(e.ast, location=top.location); }
+| e1::Expr_c 'mod' e2::Expr_c
+  { top.ast = modExpr(e1.ast, e2.ast, location=top.location); }
 | e1::Expr_c '*' e2::Expr_c
   { top.ast = mulExpr(e1.ast, e2.ast, location=top.location); }
 | e1::Expr_c '/' e2::Expr_c
