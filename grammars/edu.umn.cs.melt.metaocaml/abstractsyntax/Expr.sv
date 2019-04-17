@@ -7,13 +7,23 @@ imports silver:reflect;
 
 synthesized attribute freeVars::[String];
 
-nonterminal Expr with location, valueEnv, pp, freeVars, value<Value>;
+nonterminal Expr with location, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
 
 abstract production varExpr
 top::Expr ::= id::String
 {
   top.pp = text(id);
   top.freeVars = [id];
+  
+  top.subsOut = top.subsIn;
+  
+  local lookupRes::Maybe<Type> = lookupBy(stringEq, id, top.env);
+  top.errors :=
+    if !lookupRes.isJust
+    then [err(top.location, s"Name ${id} is not defined")]
+    else [];
+  top.type = fromMaybe(freshType(), lookupRes);
+  
   top.value =
     case lookupBy(stringEq, id, top.valueEnv) of
     | just(v) -> right(v)
@@ -26,6 +36,9 @@ top::Expr ::= i::Integer
 {
   top.pp = text(toString(i));
   top.freeVars = [];
+  top.errors := [];
+  top.subsOut = top.subsIn;
+  top.type = intType();
   top.value = right(intValue(i));
 }
 
@@ -34,8 +47,16 @@ top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let ${text(id)} = ${t.pp} in ${body.pp})";
   top.freeVars = unionBy(stringEq, t.freeVars, removeBy(stringEq, id, body.freeVars));
+  top.errors := t.errors ++ body.errors;
+  
+  t.subsIn = top.subsIn;
+  body.subsIn = t.subsOut;
+  top.subsOut = body.subsOut;
+  
+  top.type = body.type;
   top.value = do (bindEither, returnEither) { t.value; body.value; };
   
+  body.env = pair(id, t.type) :: top.env;
   body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
 }
 
@@ -44,9 +65,24 @@ top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let rec ${text(id)} = ${t.pp} in ${body.pp})";
   top.freeVars = removeBy(stringEq, id, unionBy(stringEq, t.freeVars, body.freeVars));
+  top.errors := t.errors ++ body.errors;
+  
+  local tType::Type = freshType();
+  local tCheck::Check = typeCheck(tType, t.type, t.location);
+  tCheck.subsFinal = top.subsFinal;
+  top.errors <- tCheck.errors;
+  
+  t.subsIn = top.subsIn;
+  tCheck.subsIn = t.subsOut;
+  body.subsIn = tCheck.subsOut;
+  top.subsOut = body.subsOut;
+  
+  top.type = body.type;
   top.value = do (bindEither, returnEither) { t.value; body.value; };
   
+  t.env = pair(id, tType) :: top.env;
   t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
+  body.env = t.env;
   body.valueEnv = t.valueEnv;
 }
 
@@ -56,7 +92,15 @@ top::Expr ::= id::String body::Expr
   local unfolded::Pair<[String] Expr> = unfoldLambdaVars(top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
   top.freeVars = removeBy(stringEq, id, body.freeVars);
+  top.errors := body.errors;
+  
+  local paramType::Type = freshType();
+  body.subsIn = top.subsIn;
+  top.subsOut = body.subsOut;
+  top.type = functionType(applySubs(body.subsOut, paramType), body.type);
   top.value = right(closureValue(id, body, top.valueEnv));
+  
+  body.env = pair(id, paramType) :: top.env;
 }
 
 abstract production appExpr
@@ -64,6 +108,19 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  fCheck.subsIn = e2.subsOut;
+  top.subsOut = fCheck.subsOut;
+  
+  top.type = freshType();
+  local fCheck::Check =
+    typeCheck(freshenType(applySubs(e2.subsOut, e1.type)), functionType(e2.type, top.type), e1.location);
+  fCheck.subsFinal = top.subsFinal;
+  top.errors <- fCheck.errors;
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -81,6 +138,24 @@ top::Expr ::= e1::Expr e2::Expr e3::Expr
 {
   top.pp = pp"(if ${e1.pp} then ${e2.pp} else ${e3.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, unionBy(stringEq, e2.freeVars, e3.freeVars));
+  top.errors := e1.errors ++ e2.errors ++ e3.errors;
+  
+  local cCheck::Check = typeCheck(e1.type, boolType(), e1.location);
+  cCheck.subsFinal = top.subsFinal;
+  top.errors <- cCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, e3.type, e2.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  e3.subsIn = e2.subsOut;
+  cCheck.subsIn = e3.subsOut;
+  rCheck.subsIn = cCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  
+  top.type = e2.type;
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -96,6 +171,11 @@ abstract production quoteExpr
 top::Expr ::= e::Expr
 {
   top.pp = pp".<${e.pp}>.";
+  top.errors := e.errors;
+  
+  e.subsIn = top.subsIn;
+  top.subsOut = e.subsOut;
+  top.type = codeType(e.type);
   
   local a::AST = reflect(new(e));
   a.valueEnv = top.valueEnv;
@@ -112,6 +192,18 @@ top::Expr ::= e::Expr
 {
   top.pp = pp"(.~${e.pp})";
   top.freeVars = error("undefined");
+  top.errors := e.errors;
+  
+  local cType::Type = freshType();
+  local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
+  cCheck.subsFinal = top.subsFinal;
+  top.errors <- cCheck.errors;
+  
+  e.subsIn = top.subsIn;
+  cCheck.subsIn = e.subsOut;
+  top.subsOut = cCheck.subsOut;
+  top.type = cType;
+  
   top.value = error("undefined");
 }
 
@@ -120,6 +212,18 @@ top::Expr ::= e::Expr
 {
   top.pp = pp"(.! ${e.pp})";
   top.freeVars = e.freeVars;
+  top.errors := e.errors;
+  
+  local cType::Type = freshType();
+  local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
+  cCheck.subsFinal = top.subsFinal;
+  top.errors <- cCheck.errors;
+  
+  e.subsIn = top.subsIn;
+  cCheck.subsIn = e.subsOut;
+  top.subsOut = cCheck.subsOut;
+  top.type = cType;
+  
   top.value =
     do (bindEither, returnEither) {
       eVal::Value <- e.value;
@@ -132,9 +236,9 @@ top::Expr ::= e::Expr
           end
         | _ -> error("expected an ast value")
         end;
-      case e1.freeVars of
+      case removeAllBy(stringEq, map(fst, top.valueEnv), e1.freeVars) of
       | [] -> right(unit())
-      | vs -> left(s"Run expression ${show(80, e1.pp)} contains free variables ${implode(", ", vs)}")
+      | vs -> left(err(e1.location, s"Run expression ${show(80, e1.pp)} contains variables ${implode(", ", vs)} bound in escaped code"))
       end;
       decorate e1 with {valueEnv = top.valueEnv;}.value;
     };
@@ -146,6 +250,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} mod ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = intType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -162,6 +282,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} * ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = intType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -178,12 +314,28 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} / ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = intType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
-      | _, intValue(0) -> left("Division by 0 at " ++ top.location.unparse)
+      | _, intValue(0) -> left(err(top.location, "Division by 0"))
       | intValue(a), intValue(b) -> right(intValue(a / b)) -- TODO: Silver bug, this should be lazy?
       | _, _ -> error("expected an int value")
       end;
@@ -195,6 +347,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} + ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = intType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -211,6 +379,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} - ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = intType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -227,6 +411,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} = ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -244,6 +444,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <> ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -261,6 +477,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} > ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -277,6 +509,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} >= ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -293,6 +541,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} < ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -309,6 +573,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <= ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, intType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -325,6 +605,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} && ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, boolType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;
@@ -341,6 +637,22 @@ top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} || ${e2.pp})";
   top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.errors := e1.errors ++ e2.errors;
+  
+  local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
+  lCheck.subsFinal = top.subsFinal;
+  top.errors <- lCheck.errors;
+  local rCheck::Check = typeCheck(e2.type, boolType(), e1.location);
+  rCheck.subsFinal = top.subsFinal;
+  top.errors <- rCheck.errors;
+  
+  e1.subsIn = top.subsIn;
+  e2.subsIn = e1.subsOut;
+  lCheck.subsIn = e2.subsOut;
+  rCheck.subsIn = lCheck.subsOut;
+  top.subsOut = rCheck.subsOut;
+  top.type = boolType();
+  
   top.value =
     do (bindEither, returnEither) {
       e1Val::Value <- e1.value;

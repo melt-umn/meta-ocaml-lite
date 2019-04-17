@@ -1,7 +1,7 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
 autocopy attribute valueEnv::[Pair<String Value>];
-synthesized attribute value<a>::Either<String a>;
+synthesized attribute value<a>::Either<Message a>;
 
 nonterminal Value with pp;
 
@@ -45,7 +45,8 @@ top::AST ::=
 aspect production nonterminalAST
 top::AST ::= prodName::String children::ASTs annotations::NamedASTs
 {
-  local isEscape::Boolean = prodName == "edu:umn:cs:melt:metaocaml:abstractsyntax:escapeExpr";
+  local isEscape::Boolean =
+    prodName == "edu:umn:cs:melt:metaocaml:abstractsyntax:escapeExpr";
   local escape::Expr =
     case children of
     | consAST(a, nilAST()) -> reify(a).fromRight

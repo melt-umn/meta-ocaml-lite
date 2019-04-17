@@ -11,6 +11,23 @@ parser parse::Expr_c {
   edu:umn:cs:melt:metaocaml:concretesyntax;
 }
 
+function eval
+String ::= e::Expr
+{
+  e.env = [];
+  e.subsIn = [];
+  e.subsFinal = e.subsOut;
+  e.valueEnv = [];
+  
+  return
+    if !null(e.errors)
+    then s"Errors:\n${messagesToString(e.errors)}\n"
+    else case e.value of
+    | left(msg) -> s"Runtime error:\n${msg.output}\n"
+    | right(v) -> s"${show(80, v.pp)} : ${show(80, applySubs(e.subsFinal, e.type).pp)}\n"
+    end;
+}
+
 function main
 IOVal<Integer> ::= args::[String] ioIn::IO
 {
@@ -32,10 +49,7 @@ IOVal<Integer> ::= args::[String] ioIn::IO
           return 3;
         } else {
           ast::Expr = result.parseTree.ast;
-          case decorate ast with {valueEnv = [];}.value of
-          | left(msg) -> printM("Error: " ++ msg ++ "\n")
-          | right(v) -> printM(show(80, v.pp) ++ "\n")
-          end;
+          printM(eval(ast));
           return 0;
         }
       }
