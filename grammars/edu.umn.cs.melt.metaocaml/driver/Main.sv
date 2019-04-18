@@ -14,6 +14,7 @@ parser parse::Expr_c {
 function eval
 String ::= e::Expr
 {
+  e.inQuote = false;
   e.env = [];
   e.subsIn = [];
   e.subsFinal = e.subsOut;

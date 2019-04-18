@@ -5,9 +5,10 @@ imports silver:langutil;
 imports silver:langutil:pp;
 imports silver:reflect;
 
+autocopy attribute inQuote::Boolean;
 synthesized attribute freeVars::[String];
 
-nonterminal Expr with location, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
+nonterminal Expr with location, inQuote, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
 
 abstract production varExpr
 top::Expr ::= id::String
@@ -17,12 +18,20 @@ top::Expr ::= id::String
   
   top.subsOut = top.subsIn;
   
-  local lookupRes::Maybe<Type> = lookupBy(stringEq, id, top.env);
+  local lookupRes::Maybe<EnvItem> = lookupBy(stringEq, id, top.env);
   top.errors :=
-    if !lookupRes.isJust
-    then [err(top.location, s"Name ${id} is not defined")]
-    else [];
-  top.type = fromMaybe(freshType(), lookupRes);
+    case lookupRes of
+    | just(i) ->
+      if !top.inQuote && i.defInQuote
+      then [err(top.location, s"Variable ${id} was defined in a quoted code region and cannot be used directly within an escape")]
+      else []
+    | nothing() -> [err(top.location, s"Variable ${id} is not defined")]
+    end;
+  top.type =
+    case lookupRes of
+    | just(i) -> i.type
+    | nothing() -> freshType()
+    end;
   
   top.value =
     case lookupBy(stringEq, id, top.valueEnv) of
@@ -56,7 +65,7 @@ top::Expr ::= id::String t::Expr body::Expr
   top.type = body.type;
   top.value = do (bindEither, returnEither) { t.value; body.value; };
   
-  body.env = pair(id, t.type) :: top.env;
+  body.env = pair(id, envItem(top.inQuote, t.type)) :: top.env;
   body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
 }
 
@@ -80,7 +89,7 @@ top::Expr ::= id::String t::Expr body::Expr
   top.type = body.type;
   top.value = do (bindEither, returnEither) { t.value; body.value; };
   
-  t.env = pair(id, tType) :: top.env;
+  t.env = pair(id, envItem(top.inQuote, tType)) :: top.env;
   t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
   body.env = t.env;
   body.valueEnv = t.valueEnv;
@@ -100,7 +109,7 @@ top::Expr ::= id::String body::Expr
   top.type = functionType(applySubs(body.subsOut, paramType), body.type);
   top.value = right(closureValue(id, body, top.valueEnv));
   
-  body.env = pair(id, paramType) :: top.env;
+  body.env = pair(id, envItem(top.inQuote, paramType)) :: top.env;
 }
 
 abstract production appExpr
@@ -185,6 +194,8 @@ top::Expr ::= e::Expr
       aVal::AST <- a.value;
       return astValue(aVal);
     };
+  
+  e.inQuote = true;
 }
 
 abstract production escapeExpr
@@ -205,6 +216,8 @@ top::Expr ::= e::Expr
   top.type = cType;
   
   top.value = error("undefined");
+  
+  e.inQuote = false;
 }
 
 abstract production runExpr

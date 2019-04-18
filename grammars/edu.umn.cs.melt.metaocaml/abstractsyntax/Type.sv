@@ -1,6 +1,5 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-autocopy attribute env::[Pair<String Type>];
 synthesized attribute type::Type;
 
 synthesized attribute wrapPP::Boolean;
