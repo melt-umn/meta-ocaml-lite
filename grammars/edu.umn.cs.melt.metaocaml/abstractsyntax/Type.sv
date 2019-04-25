@@ -156,12 +156,13 @@ nonterminal Check with subsIn, subsOut, subsFinal, errors;
 abstract production typeCheck
 top::Check ::= a::Type b::Type loc::Location
 {
-  local newSubs::Maybe<Subs> = 
-    do (bindMaybe, returnMaybe) {
-      s1::Subs <- unify(applySubs(top.subsIn, a), applySubs(top.subsIn, b));
-      return s1 ++ top.subsIn;
-    };
-  top.subsOut = fromMaybe(top.subsIn, newSubs);
+  local newSubs::Maybe<Subs> = unify(applySubs(top.subsIn, a), applySubs(top.subsIn, b));
+  top.subsOut =
+    top.subsIn ++
+    case newSubs of
+    | just(s) -> s
+    | nothing() -> []
+    end;
   local finalA::Type = applySubs(top.subsFinal, a);
   local finalB::Type = applySubs(top.subsFinal, b);
   top.errors :=
