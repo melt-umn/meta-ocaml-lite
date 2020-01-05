@@ -3,10 +3,6 @@
 POSITIVE="let.ml fact.ml power.ml"
 NEGATIVE="typeError.ml escapeError.ml escapeError2.ml"
 
-set -e
-./build
-set +e
-
 for prog in $POSITIVE
 do
     echo "Testing $prog"
