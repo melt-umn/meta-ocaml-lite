@@ -1,0 +1,35 @@
+#!/bin/bash
+
+POSITIVE="let.ml fact.ml power.ml"
+NEGATIVE="typeError.ml escapeError.ml escapeError2.ml"
+
+set -e
+./build
+set +e
+
+for prog in $POSITIVE
+do
+    echo "Testing $prog"
+    java -jar metaocaml.jar $prog
+    status=$?
+    echo "exit code $status"
+    if [[ $status != 0 ]]
+    then
+        exit $status
+    fi
+    echo ""
+done
+
+for prog in $NEGATIVE
+do
+    echo "Testing $prog (should fail)"
+    java -jar metaocaml.jar $prog
+    status=$?
+    echo "exit code $status"
+    if [[ $status == 0 ]]
+    then
+        exit 255
+    fi
+    echo ""
+done
+

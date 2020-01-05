@@ -12,7 +12,7 @@ parser parse::Expr_c {
 }
 
 function eval
-String ::= e::Expr
+Pair<String Integer> ::= e::Expr
 {
   e.inQuote = false;
   e.env = [];
@@ -22,10 +22,10 @@ String ::= e::Expr
   
   return
     if !null(e.errors)
-    then s"Errors:\n${messagesToString(e.errors)}\n"
+    then pair(s"Errors:\n${messagesToString(e.errors)}\n", 4)
     else case e.value of
-    | left(msg) -> s"Runtime error:\n${msg.output}\n"
-    | right(v) -> s"${show(80, v.pp)} : ${show(80, applySubs(e.subsFinal, e.type).pp)}\n"
+    | left(msg) -> pair(s"Runtime error:\n${msg.output}\n", 5)
+    | right(v) -> pair(s"${show(80, v.pp)} : ${show(80, applySubs(e.subsFinal, e.type).pp)}\n", 0)
     end;
 }
 
@@ -50,8 +50,9 @@ IOVal<Integer> ::= args::[String] ioIn::IO
           return 3;
         } else {
           ast::Expr = result.parseTree.ast;
-          printM(eval(ast));
-          return 0;
+          result::Pair<String Integer> = eval(ast);
+          printM(result.fst);
+          return result.snd;
         }
       }
     }
