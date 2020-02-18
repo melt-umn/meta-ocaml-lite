@@ -33,7 +33,7 @@ catch (e) {
   melt.handle(e)
 }
 finally {
-  melt.notify(job: 'Oberon0')
+  melt.notify(job: 'meta-ocaml-lite')
 }
 } // node
 
