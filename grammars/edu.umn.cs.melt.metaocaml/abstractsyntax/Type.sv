@@ -11,9 +11,9 @@ autocopy attribute subsFinal::Subs;
 
 autocopy attribute unifyWith::Type;
 synthesized attribute unify::Maybe<Subs>;
-synthesized attribute substituted::Type;
+functor attribute substituted;
 
-synthesized attribute freshened::Type;
+functor attribute freshened;
 
 nonterminal Type with pp, wrapPP, unifyWith, unify, subsFinal, substituted, subsIn, subsOut, freshened;
 
