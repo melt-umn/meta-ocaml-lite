@@ -23,7 +23,7 @@ top::Value ::= id::String body::Expr env::[Pair<String Value>]
   top.pp = pp"<fun>";
 }
 
-abstract production astValue
+abstract production codeValue
 top::Value ::= a::AST
 {
   local e::Expr = reify(a).fromRight;
@@ -64,7 +64,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
         escapeVal::Value <- escape.value;
         return
           case escapeVal of
-          | astValue(a) -> a
+          | codeValue(a) -> a
           | _ -> error("expected an ast value")
           end;
       }

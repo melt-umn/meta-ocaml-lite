@@ -192,7 +192,7 @@ top::Expr ::= e::Expr
   top.value =
     do (bindEither, returnEither) {
       aVal::AST <- a.value;
-      return astValue(aVal);
+      return codeValue(aVal);
     };
   
   e.inQuote = true;
@@ -242,7 +242,7 @@ top::Expr ::= e::Expr
       eVal::Value <- e.value;
       e1::Expr =
         case eVal of
-        | astValue(a) ->
+        | codeValue(a) ->
           case reify(a) of
           | left(msg) -> error(s"Reification of ${show(80, a.pp)} failed: ${msg}")
           | right(e1) -> e1
