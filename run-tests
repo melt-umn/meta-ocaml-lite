@@ -1,7 +1,7 @@
 #!/bin/bash
 
-POSITIVE="let.ml fact.ml power.ml"
-NEGATIVE="typeError.ml escapeError.ml escapeError2.ml"
+POSITIVE="let.ml fact.ml generalize.ml power.ml"
+NEGATIVE="typeError.ml typeError2.ml escapeError.ml escapeError2.ml"
 
 for prog in $POSITIVE
 do
