@@ -5,26 +5,40 @@ synthesized attribute type::Type;
 synthesized attribute wrapPP::Boolean;
 
 type Subs = [Pair<String Type>];
-inherited attribute subsIn::Subs;
-synthesized attribute subsOut::Subs;
-autocopy attribute subsFinal::Subs;
+threaded attribute subsIn, subsOut :: Subs;
+inherited attribute subsFinal::Subs;
+unification attribute unifyWith, unifiesPartial, unifies;
+synthesized attribute subsOutPartial::Subs;
 
-autocopy attribute unifyWith::Type;
-synthesized attribute unify::Maybe<Subs>;
 functor attribute substituted;
 
-functor attribute freshened;
+nonterminal Type with pp, wrapPP, freeVars, unifyWith, unifiesPartial, unifies, subsIn, subsOut, subsOutPartial, subsFinal, substituted;
 
-nonterminal Type with pp, wrapPP, unifyWith, unify, subsFinal, substituted, subsIn, subsOut, freshened;
+flowtype decorate {unifyWith, subsIn} on Type;
+
+propagate freeVars on Type;
+propagate unifyWith, unifies on Type;
+propagate unifiesPartial on Type excluding errorType, varType;
+propagate subsFinal, substituted on Type excluding varType;
+
+aspect default production
+top::Type ::=
+{
+  top.subsOut =
+    if top.unifiesPartial
+    then top.subsOutPartial
+    else if top.unifyWith.unifiesPartial
+    then top.unifyWith.subsOutPartial
+    else top.subsIn;
+}
 
 abstract production errorType
 top::Type ::=
 {
-  propagate substituted, freshened;
   top.pp = pp"<err>";
   top.wrapPP = false;
-  top.unify = just([]);
-  top.subsOut = top.subsIn;
+  top.unifiesPartial = true;
+  top.subsOutPartial = top.subsIn;
 }
 
 abstract production varType
@@ -32,156 +46,108 @@ top::Type ::= n::String
 {
   top.pp = pp"'${text(n)}";
   top.wrapPP = false;
-  top.unify = just([pair(n, top.unifyWith)]);
+  top.freeVars <- [n];
+  
+  local isBound::Boolean = lookupBy(stringEq, n, top.subsIn).isJust;
+  local boundType::Type = lookupBy(stringEq, n, top.subsIn).fromJust;
+  boundType.unifyWith = otherType;
+  boundType.subsIn = top.subsIn;
+  local otherType::Type = new(top.unifyWith);
+  otherType.unifyWith = boundType;
+  otherType.subsIn = top.subsIn;
+  top.unifiesPartial =
+    case top.unifyWith of
+    | varType(n1) when n == n1 -> true
+    | _ when isBound -> boundType.unifies
+    | _ -> !containsBy(stringEq, n, top.unifyWith.freeVars) -- occurs check
+    end;
+  top.subsOutPartial =
+    case top.unifyWith of
+    | varType(n1) when n == n1 -> []
+    | _ when isBound -> boundType.subsOut
+    | _ -> pair(n, otherType) :: top.subsIn
+    end;
+
   top.substituted =
     case lookupBy(stringEq, n, top.subsFinal) of
     | just(a) -> applySubs(top.subsFinal, a)
     | nothing() -> top
-    end;
-  
-  local f::Type = freshType();
-  top.subsOut =
-    case lookupBy(stringEq, n, top.subsIn) of
-    | just(_) -> top.subsIn
-    | nothing() -> pair(n, f) :: top.subsIn
-    end;
-  top.freshened =
-    case lookupBy(stringEq, n, top.subsIn) of
-    | just(a) -> a
-    | nothing() -> f
     end;
 }
 
 abstract production skolemType
 top::Type ::= n::String
 {
-  propagate substituted;
   top.pp = pp"'${text(n)}";
   top.wrapPP = false;
-  top.unify =
-    case top.unifyWith of
-    | errorType() -> just([])
-    | skolemType(n1) -> if n == n1 then just([]) else nothing()
-    | varType(n1) -> just([pair(n1, top)])
-    | _ -> nothing()
-    end;
-  
-  local f::Type = freshType();
-  top.subsOut =
-    case lookupBy(stringEq, n, top.subsIn) of
-    | just(_) -> top.subsIn
-    | nothing() -> pair(n, f) :: top.subsIn
-    end;
-  top.freshened =
-    case lookupBy(stringEq, n, top.subsIn) of
-    | just(a) -> a
-    | nothing() -> f
-    end;
+  top.freeVars <- [n];
+  top.subsOutPartial = top.subsIn;
 }
 
 abstract production intType
 top::Type ::=
 {
-  propagate substituted, freshened;
   top.pp = pp"int";
   top.wrapPP = false;
-  top.unify =
-    case top.unifyWith of
-    | errorType() -> just([])
-    | intType() -> just([])
-    | varType(n) -> just([pair(n, top)])
-    | _ -> nothing()
-    end;
-  top.subsOut = top.subsIn;
+  top.subsOutPartial = top.subsIn;
 }
 
 abstract production boolType
 top::Type ::=
 {
-  propagate substituted, freshened;
   top.pp = pp"bool";
   top.wrapPP = false;
-  top.unify =
-    case top.unifyWith of
-    | errorType() -> just([])
-    | boolType() -> just([])
-    | varType(n) -> just([pair(n, top)])
-    | _ -> nothing()
-    end;
-  top.subsOut = top.subsIn;
+  top.subsOutPartial = top.subsIn;
 }
 
 abstract production functionType
 top::Type ::= a::Type b::Type
 {
-  propagate substituted, freshened;
-  top.pp = pp"${maybeWrapTypePP(a)} -> ${maybeWrapTypePP(b)}";
+  top.pp = pp"${maybeWrapTypePP(a)} -> ${b.pp}";
   top.wrapPP = true;
-  top.unify =
-    case top.unifyWith of
-    | errorType() -> just([])
-    | functionType(a1, b1) ->
-      do (bindMaybe, returnMaybe) {
-        s1::Subs <- unify(a, a1);
-        s2::Subs <- unify(b, b1);
-        return s1 ++ s2;
-      }
-    | varType(n) -> just([pair(n, top)])
-    | _ -> nothing()
-    end;
-  a.subsIn = top.subsIn;
-  b.subsIn = a.subsOut;
-  top.subsOut = b.subsOut;
+
+  thread subsIn, subsOut on top, a, b;
+  top.subsOutPartial = b.subsOut;
 }
 
 abstract production codeType
 top::Type ::= a::Type
 {
-  propagate substituted, freshened;
   top.pp = pp"${maybeWrapTypePP(a)} code";
   top.wrapPP = true;
-  top.unify =
-    case top.unifyWith of
-    | errorType() -> just([])
-    | codeType(a1) -> unify(a, a1)
-    | varType(n) -> just([pair(n, top)])
-    | _ -> nothing()
-    end;
-  a.subsIn = top.subsIn;
-  top.subsOut = a.subsOut;
+
+  thread subsIn, subsOut on top, a;
+  top.subsOutPartial = a.subsOut;
 }
 
 nonterminal Check with subsIn, subsOut, subsFinal, errors;
 
+propagate subsFinal on Check;
+
 abstract production typeCheck
 top::Check ::= a::Type b::Type loc::Location
 {
-  local newSubs::Maybe<Subs> = unify(applySubs(top.subsIn, a), applySubs(top.subsIn, b));
-  top.subsOut =
-    top.subsIn ++
-    case newSubs of
-    | just(s) -> s
-    | nothing() -> []
-    end;
+  a.unifyWith = b;
+  b.unifyWith = a;
+  thread subsIn, subsOut on top, a, top;
+  thread subsIn, subsOut on top, b;
   local finalA::Type = applySubs(top.subsFinal, a);
   local finalB::Type = applySubs(top.subsFinal, b);
   top.errors :=
-    if newSubs.isJust
+    if a.unifies
     then []
     else [err(loc, s"Incompatible types ${show(80, finalA.pp)} and ${show(80, finalB.pp)}")];
 }
 
-function freshType
-Type ::=
-{
-  return varType("a" ++ toString(genInt()));
-}
-
+-- Not used, but for reference
 function unify
 Maybe<Subs> ::= a::Type b::Type
 {
   a.unifyWith = b;
-  return a.unify;
+  a.subsIn = [];
+  b.unifyWith = a;
+  b.subsIn = [];
+  return if a.unifies then just(a.subsOut) else nothing();
 }
 
 function applySubs
@@ -191,11 +157,22 @@ Type ::= s::Subs t::Type
   return t.substituted;
 }
 
-function freshenType
-Type ::= a::Type
+function showSubs
+String ::= subs::Subs
 {
-  a.subsIn = [];
-  return a.freshened;
+  return implode(", ", map(\ s::Pair<String Type> -> s"${s.fst} = ${show(80, s.snd.pp)}", subs));
+}
+
+function freshType
+Type ::=
+{
+  return varType("a" ++ toString(genInt()));
+}
+
+function freshenType
+Type ::= vars::[String] a::Type
+{
+  return applySubs(zipWith(pair, vars, map(\ String -> freshType(), vars)), a);
 }
 
 function maybeWrapTypePP

@@ -1,6 +1,6 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-autocopy attribute valueEnv::[Pair<String Value>];
+inherited attribute valueEnv::[Pair<String Value>];
 synthesized attribute value<a>::Either<Message a>;
 
 nonterminal Value with pp;
@@ -35,10 +35,12 @@ attribute freeVars occurs on AST, ASTs, NamedAST, NamedASTs;
 attribute valueEnv occurs on AST, ASTs, NamedAST, NamedASTs;
 attribute value<AST> occurs on AST;
 
+propagate valueEnv on AST, ASTs, NamedAST, NamedASTs;
+propagate freeVars on AST, ASTs, NamedAST, NamedASTs excluding nonterminalAST;
+
 aspect default production
 top::AST ::=
 {
-  top.freeVars = [];
   top.value = right(top);
 }
 
@@ -53,7 +55,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
     end;
   escape.valueEnv = top.valueEnv;
   
-  top.freeVars =
+  top.freeVars :=
     if isEscape
     then escape.freeVars
     else unionBy(stringEq, children.freeVars, annotations.freeVars);
@@ -79,7 +81,6 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
 aspect production listAST
 top::AST ::= vals::ASTs
 {
-  top.freeVars = vals.freeVars;
   top.value =
     do (bindEither, returnEither) {
       valsValue::ASTs <- vals.value;
@@ -92,7 +93,6 @@ attribute value<ASTs> occurs on ASTs;
 aspect production consAST
 top::ASTs ::= h::AST t::ASTs
 {
-  top.freeVars = unionBy(stringEq, h.freeVars, t.freeVars);
   top.value =
     do (bindEither, returnEither) {
       hValue::AST <- h.value;
@@ -104,7 +104,6 @@ top::ASTs ::= h::AST t::ASTs
 aspect production nilAST
 top::ASTs ::=
 {
-  top.freeVars = [];
   top.value = right(nilAST());
 }
 
@@ -113,7 +112,6 @@ attribute value<NamedASTs> occurs on NamedASTs;
 aspect production consNamedAST
 top::NamedASTs ::= h::NamedAST t::NamedASTs
 {
-  top.freeVars = unionBy(stringEq, h.freeVars, t.freeVars);
   top.value =
     do (bindEither, returnEither) {
       hValue::NamedAST <- h.value;
@@ -125,7 +123,6 @@ top::NamedASTs ::= h::NamedAST t::NamedASTs
 aspect production nilNamedAST
 top::NamedASTs ::=
 {
-  top.freeVars = [];
   top.value = right(nilNamedAST());
 }
 
@@ -134,7 +131,6 @@ attribute value<NamedAST> occurs on NamedAST;
 aspect production namedAST
 top::NamedAST ::= n::String v::AST
 {
-  top.freeVars = v.freeVars;
   top.value =
     do (bindEither, returnEither) {
       vValue::AST <- v.value;
