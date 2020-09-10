@@ -5,15 +5,8 @@ imports silver:langutil;
 imports silver:langutil:pp;
 imports silver:reflect;
 
--- TODO: fix collection attributes to not need this
-function unionByStringEq
-[String] ::= a::[String] b::[String]
-{
-  return unionBy(stringEq, a, b);
-}
-
 inherited attribute inQuote::Boolean;
-monoid attribute freeVars::[String] with [], unionByStringEq;
+monoid attribute freeVars::[String] with [], unionBy(stringEq, _, _);
 
 nonterminal Expr with location, inQuote, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
 
