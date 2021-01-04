@@ -1,6 +1,5 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-imports core:monad;
 imports silver:langutil;
 imports silver:langutil:pp;
 imports silver:reflect;

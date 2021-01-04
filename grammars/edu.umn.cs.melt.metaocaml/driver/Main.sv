@@ -1,6 +1,5 @@
 grammar edu:umn:cs:melt:metaocaml:driver;
 
-imports core:monad;
 imports silver:langutil;
 imports silver:langutil:pp;
 
