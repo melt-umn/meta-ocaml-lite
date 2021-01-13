@@ -56,7 +56,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
   top.freeVars =
     if isEscape
     then escape.freeVars
-    else unionBy(stringEq, children.freeVars, annotations.freeVars);
+    else union(children.freeVars, annotations.freeVars);
   top.value =
     if isEscape
     then
@@ -92,7 +92,7 @@ attribute value<ASTs> occurs on ASTs;
 aspect production consAST
 top::ASTs ::= h::AST t::ASTs
 {
-  top.freeVars = unionBy(stringEq, h.freeVars, t.freeVars);
+  top.freeVars = union(h.freeVars, t.freeVars);
   top.value =
     do (bindEither, returnEither) {
       hValue::AST <- h.value;
@@ -113,7 +113,7 @@ attribute value<NamedASTs> occurs on NamedASTs;
 aspect production consNamedAST
 top::NamedASTs ::= h::NamedAST t::NamedASTs
 {
-  top.freeVars = unionBy(stringEq, h.freeVars, t.freeVars);
+  top.freeVars = union(h.freeVars, t.freeVars);
   top.value =
     do (bindEither, returnEither) {
       hValue::NamedAST <- h.value;

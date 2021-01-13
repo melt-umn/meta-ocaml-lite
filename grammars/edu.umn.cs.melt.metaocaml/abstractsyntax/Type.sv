@@ -34,19 +34,19 @@ top::Type ::= n::String
   top.wrapPP = false;
   top.unify = just([pair(n, top.unifyWith)]);
   top.substituted =
-    case lookupBy(stringEq, n, top.subsFinal) of
+    case lookup(n, top.subsFinal) of
     | just(a) -> applySubs(top.subsFinal, a)
     | nothing() -> top
     end;
   
   local f::Type = freshType();
   top.subsOut =
-    case lookupBy(stringEq, n, top.subsIn) of
+    case lookup(n, top.subsIn) of
     | just(_) -> top.subsIn
     | nothing() -> pair(n, f) :: top.subsIn
     end;
   top.freshened =
-    case lookupBy(stringEq, n, top.subsIn) of
+    case lookup(n, top.subsIn) of
     | just(a) -> a
     | nothing() -> f
     end;
@@ -68,12 +68,12 @@ top::Type ::= n::String
   
   local f::Type = freshType();
   top.subsOut =
-    case lookupBy(stringEq, n, top.subsIn) of
+    case lookup(n, top.subsIn) of
     | just(_) -> top.subsIn
     | nothing() -> pair(n, f) :: top.subsIn
     end;
   top.freshened =
-    case lookupBy(stringEq, n, top.subsIn) of
+    case lookup(n, top.subsIn) of
     | just(a) -> a
     | nothing() -> f
     end;

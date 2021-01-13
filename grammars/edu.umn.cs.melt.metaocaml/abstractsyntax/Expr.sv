@@ -17,7 +17,7 @@ top::Expr ::= id::String
   
   top.subsOut = top.subsIn;
   
-  local lookupRes::Maybe<EnvItem> = lookupBy(stringEq, id, top.env);
+  local lookupRes::Maybe<EnvItem> = lookup(id, top.env);
   top.errors :=
     case lookupRes of
     | just(i) ->
@@ -33,7 +33,7 @@ top::Expr ::= id::String
     end;
   
   top.value =
-    case lookupBy(stringEq, id, top.valueEnv) of
+    case lookup(id, top.valueEnv) of
     | just(v) -> right(v)
     | nothing() -> error(s"Lookup of ${id} failed")
     end;
@@ -54,7 +54,7 @@ abstract production letExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars = unionBy(stringEq, t.freeVars, removeBy(stringEq, id, body.freeVars));
+  top.freeVars = union(t.freeVars, remove(id, body.freeVars));
   top.errors := t.errors ++ body.errors;
   
   t.subsIn = top.subsIn;
@@ -72,7 +72,7 @@ abstract production letRecExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let rec ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars = removeBy(stringEq, id, unionBy(stringEq, t.freeVars, body.freeVars));
+  top.freeVars = remove(id, union(t.freeVars, body.freeVars));
   top.errors := t.errors ++ body.errors;
   
   local tType::Type = freshType();
@@ -99,7 +99,7 @@ top::Expr ::= id::String body::Expr
 {
   local unfolded::Pair<[String] Expr> = unfoldLambdaVars(top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
-  top.freeVars = removeBy(stringEq, id, body.freeVars);
+  top.freeVars = remove(id, body.freeVars);
   top.errors := body.errors;
   
   local paramType::Type = freshType();
@@ -115,7 +115,7 @@ abstract production appExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   e1.subsIn = top.subsIn;
@@ -145,7 +145,7 @@ abstract production ifExpr
 top::Expr ::= e1::Expr e2::Expr e3::Expr
 {
   top.pp = pp"(if ${e1.pp} then ${e2.pp} else ${e3.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, unionBy(stringEq, e2.freeVars, e3.freeVars));
+  top.freeVars = union(e1.freeVars, union(e2.freeVars, e3.freeVars));
   top.errors := e1.errors ++ e2.errors ++ e3.errors;
   
   local cCheck::Check = typeCheck(e1.type, boolType(), e1.location);
@@ -248,7 +248,7 @@ top::Expr ::= e::Expr
           end
         | _ -> error("expected an ast value")
         end;
-      case removeAllBy(stringEq, map(fst, top.valueEnv), e1.freeVars) of
+      case removeAll(map(fst, top.valueEnv), e1.freeVars) of
       | [] -> right(unit())
       | vs -> left(err(e1.location, s"Run expression ${show(80, e1.pp)} contains variables ${implode(", ", vs)} bound in escaped code"))
       end;
@@ -261,7 +261,7 @@ abstract production modExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} mod ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -293,7 +293,7 @@ abstract production mulExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} * ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -325,7 +325,7 @@ abstract production divExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} / ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -358,7 +358,7 @@ abstract production addExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} + ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -390,7 +390,7 @@ abstract production subExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} - ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -422,7 +422,7 @@ abstract production eqExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} = ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -455,7 +455,7 @@ abstract production neqExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <> ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -488,7 +488,7 @@ abstract production gtExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} > ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -520,7 +520,7 @@ abstract production gteExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} >= ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -552,7 +552,7 @@ abstract production ltExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} < ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -584,7 +584,7 @@ abstract production lteExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <= ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
@@ -616,7 +616,7 @@ abstract production andExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} && ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
@@ -648,7 +648,7 @@ abstract production orExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} || ${e2.pp})";
-  top.freeVars = unionBy(stringEq, e1.freeVars, e2.freeVars);
+  top.freeVars = union(e1.freeVars, e2.freeVars);
   top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
