@@ -60,7 +60,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
   top.value =
     if isEscape
     then
-      do (bindEither, returnEither) {
+      do {
         escapeVal::Value <- escape.value;
         return
           case escapeVal of
@@ -69,7 +69,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
           end;
       }
     else
-      do (bindEither, returnEither) {
+      do {
         childrenValue::ASTs <- children.value;
         annotationValue::NamedASTs <- annotations.value;
         return nonterminalAST(prodName, childrenValue, annotationValue);
@@ -81,7 +81,7 @@ top::AST ::= vals::ASTs
 {
   top.freeVars = vals.freeVars;
   top.value =
-    do (bindEither, returnEither) {
+    do {
       valsValue::ASTs <- vals.value;
       return listAST(valsValue);
     };
@@ -94,7 +94,7 @@ top::ASTs ::= h::AST t::ASTs
 {
   top.freeVars = union(h.freeVars, t.freeVars);
   top.value =
-    do (bindEither, returnEither) {
+    do {
       hValue::AST <- h.value;
       tValue::ASTs <- t.value;
       return consAST(hValue, tValue);
@@ -115,7 +115,7 @@ top::NamedASTs ::= h::NamedAST t::NamedASTs
 {
   top.freeVars = union(h.freeVars, t.freeVars);
   top.value =
-    do (bindEither, returnEither) {
+    do {
       hValue::NamedAST <- h.value;
       tValue::NamedASTs <- t.value;
       return consNamedAST(hValue, tValue);
@@ -136,7 +136,7 @@ top::NamedAST ::= n::String v::AST
 {
   top.freeVars = v.freeVars;
   top.value =
-    do (bindEither, returnEither) {
+    do {
       vValue::AST <- v.value;
       return namedAST(n, vValue);
     };

@@ -121,7 +121,7 @@ top::Type ::= a::Type b::Type
     case top.unifyWith of
     | errorType() -> just([])
     | functionType(a1, b1) ->
-      do (bindMaybe, returnMaybe) {
+      do {
         s1::Subs <- unify(a, a1);
         s2::Subs <- unify(b, b1);
         return s1 ++ s2;

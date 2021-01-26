@@ -62,7 +62,7 @@ top::Expr ::= id::String t::Expr body::Expr
   top.subsOut = body.subsOut;
   
   top.type = body.type;
-  top.value = do (bindEither, returnEither) { t.value; body.value; };
+  top.value = applySecond(t.value, body.value);
   
   body.env = pair(id, envItem(top.inQuote, t.type)) :: top.env;
   body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
@@ -86,7 +86,7 @@ top::Expr ::= id::String t::Expr body::Expr
   top.subsOut = body.subsOut;
   
   top.type = body.type;
-  top.value = do (bindEither, returnEither) { t.value; body.value; };
+  top.value = applySecond(t.value, body.value);
   
   t.env = pair(id, envItem(top.inQuote, tType)) :: top.env;
   t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
@@ -130,7 +130,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.errors <- fCheck.errors;
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val of
@@ -165,7 +165,7 @@ top::Expr ::= e1::Expr e2::Expr e3::Expr
   top.type = e2.type;
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       case e1Val of
       | boolValue(b) -> if b then e2.value else e3.value
@@ -189,7 +189,7 @@ top::Expr ::= e::Expr
   a.valueEnv = top.valueEnv;
   top.freeVars = a.freeVars;
   top.value =
-    do (bindEither, returnEither) {
+    do {
       aVal::AST <- a.value;
       return codeValue(aVal);
     };
@@ -237,9 +237,9 @@ top::Expr ::= e::Expr
   top.type = cType;
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       eVal::Value <- e.value;
-      e1::Expr =
+      let e1::Expr =
         case eVal of
         | codeValue(a) ->
           case reify(a) of
@@ -279,7 +279,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = intType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -311,7 +311,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = intType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -343,7 +343,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = intType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -376,7 +376,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = intType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -408,7 +408,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = intType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -440,7 +440,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -473,7 +473,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -506,7 +506,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -538,7 +538,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -570,7 +570,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -602,7 +602,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -634,7 +634,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -666,7 +666,7 @@ top::Expr ::= e1::Expr e2::Expr
   top.type = boolType();
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
