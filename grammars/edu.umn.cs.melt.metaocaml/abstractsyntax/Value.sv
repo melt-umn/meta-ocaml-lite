@@ -52,17 +52,18 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
   local escape::Expr =
     case children of
     | consAST(a, nilAST()) -> reify(a).fromRight
+    | _ -> error("Invalid AST for escapeExpr")
     end;
   escape.valueEnv = top.valueEnv;
   
   top.freeVars :=
     if isEscape
     then escape.freeVars
-    else unionBy(stringEq, children.freeVars, annotations.freeVars);
+    else union(children.freeVars, annotations.freeVars);
   top.value =
     if isEscape
     then
-      do (bindEither, returnEither) {
+      do {
         escapeVal::Value <- escape.value;
         return
           case escapeVal of
@@ -71,7 +72,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
           end;
       }
     else
-      do (bindEither, returnEither) {
+      do {
         childrenValue::ASTs <- children.value;
         annotationValue::NamedASTs <- annotations.value;
         return nonterminalAST(prodName, childrenValue, annotationValue);
@@ -82,7 +83,7 @@ aspect production listAST
 top::AST ::= vals::ASTs
 {
   top.value =
-    do (bindEither, returnEither) {
+    do {
       valsValue::ASTs <- vals.value;
       return listAST(valsValue);
     };
@@ -94,7 +95,7 @@ aspect production consAST
 top::ASTs ::= h::AST t::ASTs
 {
   top.value =
-    do (bindEither, returnEither) {
+    do {
       hValue::AST <- h.value;
       tValue::ASTs <- t.value;
       return consAST(hValue, tValue);
@@ -113,7 +114,7 @@ aspect production consNamedAST
 top::NamedASTs ::= h::NamedAST t::NamedASTs
 {
   top.value =
-    do (bindEither, returnEither) {
+    do {
       hValue::NamedAST <- h.value;
       tValue::NamedASTs <- t.value;
       return consNamedAST(hValue, tValue);
@@ -132,7 +133,7 @@ aspect production namedAST
 top::NamedAST ::= n::String v::AST
 {
   top.value =
-    do (bindEither, returnEither) {
+    do {
       vValue::AST <- v.value;
       return namedAST(n, vValue);
     };

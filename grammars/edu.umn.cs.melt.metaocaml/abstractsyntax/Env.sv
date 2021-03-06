@@ -19,5 +19,5 @@ top::EnvItem ::= inQuote::Boolean polyVars::[String] type::Type
 function envFreeVars
 [String] ::= e::Env
 {
-  return unionsBy(stringEq, map((.freeVars), map(snd, e)));
+  return unions(map((.freeVars), map(snd, e)));
 }

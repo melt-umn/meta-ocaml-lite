@@ -7,14 +7,12 @@ synthesized attribute wrapPP::Boolean;
 type Subs = [Pair<String Type>];
 threaded attribute subsIn, subsOut :: Subs;
 inherited attribute subsFinal::Subs;
-unification attribute unifyWith, unifiesPartial, unifies;
+unification attribute unifyWith {unifyWith, subsIn}, unifiesPartial, unifies;
 synthesized attribute subsOutPartial::Subs;
 
 functor attribute substituted;
 
 nonterminal Type with pp, wrapPP, freeVars, unifyWith, unifiesPartial, unifies, subsIn, subsOut, subsOutPartial, subsFinal, substituted;
-
-flowtype decorate {unifyWith, subsIn} on Type;
 
 propagate freeVars on Type;
 propagate unifyWith, unifies on Type;
@@ -48,8 +46,8 @@ top::Type ::= n::String
   top.wrapPP = false;
   top.freeVars <- [n];
   
-  local isBound::Boolean = lookupBy(stringEq, n, top.subsIn).isJust;
-  local boundType::Type = lookupBy(stringEq, n, top.subsIn).fromJust;
+  local isBound::Boolean = lookup(n, top.subsIn).isJust;
+  local boundType::Type = lookup(n, top.subsIn).fromJust;
   boundType.unifyWith = otherType;
   boundType.subsIn = top.subsIn;
   local otherType::Type = new(top.unifyWith);
@@ -59,7 +57,7 @@ top::Type ::= n::String
     case top.unifyWith of
     | varType(n1) when n == n1 -> true
     | _ when isBound -> boundType.unifies
-    | _ -> !containsBy(stringEq, n, top.unifyWith.freeVars) -- occurs check
+    | _ -> !contains(n, top.unifyWith.freeVars) -- occurs check
     end;
   top.subsOutPartial =
     case top.unifyWith of
@@ -69,7 +67,7 @@ top::Type ::= n::String
     end;
 
   top.substituted =
-    case lookupBy(stringEq, n, top.subsFinal) of
+    case lookup(n, top.subsFinal) of
     | just(a) -> applySubs(top.subsFinal, a)
     | nothing() -> top
     end;

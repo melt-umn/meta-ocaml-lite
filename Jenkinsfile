@@ -12,6 +12,7 @@ try {
   stage ("Checkout") {
     checkout scm
     melt.clearGenerated()
+    sh "rm -f *.jar"
   }
 
   stage ("Build") {

@@ -1,12 +1,11 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-imports core:monad;
 imports silver:langutil;
 imports silver:langutil:pp;
 imports silver:reflect;
 
 inherited attribute inQuote::Boolean;
-monoid attribute freeVars::[String] with [], unionBy(stringEq, _, _);
+monoid attribute freeVars::[String] with [], union;
 
 nonterminal Expr with location, inQuote, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
 
@@ -22,7 +21,7 @@ top::Expr ::= id::String
   
   propagate subsIn, subsOut;
   
-  local lookupRes::Maybe<EnvItem> = lookupBy(stringEq, id, top.env);
+  local lookupRes::Maybe<EnvItem> = lookup(id, top.env);
   top.errors <-
     case lookupRes of
     | just(i) ->
@@ -38,7 +37,7 @@ top::Expr ::= id::String
     end;
   
   top.value =
-    case lookupBy(stringEq, id, top.valueEnv) of
+    case lookup(id, top.valueEnv) of
     | just(v) -> right(v)
     | nothing() -> error(s"Lookup of ${id} failed")
     end;
@@ -57,17 +56,17 @@ abstract production letExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars := unionBy(stringEq, t.freeVars, removeBy(stringEq, id, body.freeVars));
+  top.freeVars := union(t.freeVars, remove(id, body.freeVars));
   
   propagate subsIn, subsOut;
   
   top.type = body.type;
-  top.value = do (bindEither, returnEither) { t.value; body.value; };
+  top.value = applySecond(t.value, body.value);
   
   t.env = top.env;
   t.valueEnv = top.valueEnv;
   
-  local polyVars::[String] = removeAllBy(stringEq, envFreeVars(top.env), t.type.freeVars);
+  local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
   body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, t.type))) :: top.env;
   body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
 }
@@ -76,7 +75,7 @@ abstract production letRecExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let rec ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars := removeBy(stringEq, id, unionBy(stringEq, t.freeVars, body.freeVars));
+  top.freeVars := remove(id, union(t.freeVars, body.freeVars));
   
   local tType::Type = freshType();
   local tCheck::Check = typeCheck(tType, t.type, t.location);
@@ -86,9 +85,9 @@ top::Expr ::= id::String t::Expr body::Expr
   thread subsIn, subsOut on top, t, tCheck, body, top;
   
   top.type = body.type;
-  top.value = do (bindEither, returnEither) { t.value; body.value; };
+  top.value = applySecond(t.value, body.value);
   
-  local polyVars::[String] = removeAllBy(stringEq, envFreeVars(top.env), t.type.freeVars);
+  local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
   t.env = pair(id, envItem(top.inQuote, [], tType)) :: top.env;
   t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
   body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, tType))) :: top.env;
@@ -100,7 +99,7 @@ top::Expr ::= id::String body::Expr
 {
   local unfolded::Pair<[String] Expr> = unfoldLambdaVars(top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
-  top.freeVars := removeBy(stringEq, id, body.freeVars);
+  top.freeVars := remove(id, body.freeVars);
   
   propagate subsIn, subsOut;
   
@@ -124,7 +123,7 @@ top::Expr ::= e1::Expr e2::Expr
   thread subsIn, subsOut on top, e1, e2, fCheck, top;
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val of
@@ -151,7 +150,7 @@ top::Expr ::= e1::Expr e2::Expr e3::Expr
   
   top.type = e2.type;
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       case e1Val of
       | boolValue(b) -> if b then e2.value else e3.value
@@ -173,7 +172,7 @@ top::Expr ::= e::Expr
   local a::AST = reflect(new(e));
   a.valueEnv = top.valueEnv;
   top.value =
-    do (bindEither, returnEither) {
+    do {
       aVal::AST <- a.value;
       return codeValue(aVal);
     };
@@ -214,9 +213,9 @@ top::Expr ::= e::Expr
   top.type = cType;
   
   top.value =
-    do (bindEither, returnEither) {
+    do {
       eVal::Value <- e.value;
-      e1::Expr =
+      let e1::Expr =
         case eVal of
         | codeValue(a) ->
           case reify(a) of
@@ -225,7 +224,7 @@ top::Expr ::= e::Expr
           end
         | _ -> error("expected an ast value")
         end;
-      case removeAllBy(stringEq, map(fst, top.valueEnv), e1.freeVars) of
+      case removeAll(map(fst, top.valueEnv), e1.freeVars) of
       | [] -> right(unit())
       | vs -> left(err(e1.location, s"Run expression ${show(80, e1.pp)} contains variables ${implode(", ", vs)} bound in escaped code"))
       end;
@@ -250,7 +249,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = intType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -276,7 +275,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = intType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -302,7 +301,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = intType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -329,7 +328,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = intType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -355,7 +354,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = intType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -381,7 +380,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -408,7 +407,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -435,7 +434,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -461,7 +460,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -487,7 +486,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -513,7 +512,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -539,7 +538,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
@@ -565,7 +564,7 @@ top::Expr ::= e1::Expr e2::Expr
   
   top.type = boolType();
   top.value =
-    do (bindEither, returnEither) {
+    do {
       e1Val::Value <- e1.value;
       e2Val::Value <- e2.value;
       case e1Val, e2Val of
