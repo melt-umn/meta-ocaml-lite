@@ -7,7 +7,7 @@ synthesized attribute wrapPP::Boolean;
 type Subs = [Pair<String Type>];
 threaded attribute subsIn, subsOut :: Subs;
 inherited attribute subsFinal::Subs;
-unification attribute unifyWith {unifyWith, subsIn}, unifiesPartial, unifies;
+unification attribute unifyWith {subsIn}, unifiesPartial, unifies;
 synthesized attribute subsOutPartial::Subs;
 
 functor attribute substituted;
