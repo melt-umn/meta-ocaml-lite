@@ -17,7 +17,7 @@ try {
 
   stage ("Build") {
     withEnv(newenv) {
-      sh "./build"
+      sh "./build --clean --mwda"
     }
   }
     

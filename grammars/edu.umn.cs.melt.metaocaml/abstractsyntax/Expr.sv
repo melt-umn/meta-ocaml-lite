@@ -4,21 +4,25 @@ imports silver:langutil;
 imports silver:langutil:pp;
 imports silver:reflect;
 
-autocopy attribute inQuote::Boolean;
-synthesized attribute freeVars::[String];
+inherited attribute inQuote::Boolean;
+monoid attribute freeVars::[String] with [], union;
 
 nonterminal Expr with location, inQuote, env, valueEnv, pp, freeVars, errors, subsIn, subsOut, subsFinal, type, value<Value>;
+
+propagate errors, subsFinal on Expr;
+propagate inQuote on Expr excluding quoteExpr, escapeExpr;
+propagate env, valueEnv, freeVars on Expr excluding letExpr, letRecExpr, lambdaExpr;
 
 abstract production varExpr
 top::Expr ::= id::String
 {
   top.pp = text(id);
-  top.freeVars = [id];
+  top.freeVars <- [id];
   
-  top.subsOut = top.subsIn;
+  propagate subsIn, subsOut;
   
   local lookupRes::Maybe<EnvItem> = lookup(id, top.env);
-  top.errors :=
+  top.errors <-
     case lookupRes of
     | just(i) ->
       if !top.inQuote && i.defInQuote
@@ -28,7 +32,7 @@ top::Expr ::= id::String
     end;
   top.type =
     case lookupRes of
-    | just(i) -> i.type
+    | just(i) -> freshenType(i.polyVars, i.type)
     | nothing() -> freshType()
     end;
   
@@ -43,9 +47,7 @@ abstract production intExpr
 top::Expr ::= i::Integer
 {
   top.pp = text(toString(i));
-  top.freeVars = [];
-  top.errors := [];
-  top.subsOut = top.subsIn;
+  propagate subsIn, subsOut;
   top.type = intType();
   top.value = right(intValue(i));
 }
@@ -54,17 +56,18 @@ abstract production letExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars = union(t.freeVars, remove(id, body.freeVars));
-  top.errors := t.errors ++ body.errors;
+  top.freeVars := union(t.freeVars, remove(id, body.freeVars));
   
-  t.subsIn = top.subsIn;
-  body.subsIn = t.subsOut;
-  top.subsOut = body.subsOut;
+  propagate subsIn, subsOut;
   
   top.type = body.type;
   top.value = applySecond(t.value, body.value);
   
-  body.env = pair(id, envItem(top.inQuote, t.type)) :: top.env;
+  t.env = top.env;
+  t.valueEnv = top.valueEnv;
+  
+  local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
+  body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, t.type))) :: top.env;
   body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
 }
 
@@ -72,25 +75,22 @@ abstract production letRecExpr
 top::Expr ::= id::String t::Expr body::Expr
 {
   top.pp = pp"(let rec ${text(id)} = ${t.pp} in ${body.pp})";
-  top.freeVars = remove(id, union(t.freeVars, body.freeVars));
-  top.errors := t.errors ++ body.errors;
+  top.freeVars := remove(id, union(t.freeVars, body.freeVars));
   
   local tType::Type = freshType();
   local tCheck::Check = typeCheck(tType, t.type, t.location);
   tCheck.subsFinal = top.subsFinal;
   top.errors <- tCheck.errors;
   
-  t.subsIn = top.subsIn;
-  tCheck.subsIn = t.subsOut;
-  body.subsIn = tCheck.subsOut;
-  top.subsOut = body.subsOut;
+  thread subsIn, subsOut on top, t, tCheck, body, top;
   
   top.type = body.type;
   top.value = applySecond(t.value, body.value);
   
-  t.env = pair(id, envItem(top.inQuote, tType)) :: top.env;
+  local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
+  t.env = pair(id, envItem(top.inQuote, [], tType)) :: top.env;
   t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
-  body.env = t.env;
+  body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, tType))) :: top.env;
   body.valueEnv = t.valueEnv;
 }
 
@@ -99,35 +99,28 @@ top::Expr ::= id::String body::Expr
 {
   local unfolded::Pair<[String] Expr> = unfoldLambdaVars(top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
-  top.freeVars = remove(id, body.freeVars);
-  top.errors := body.errors;
+  top.freeVars := remove(id, body.freeVars);
+  
+  propagate subsIn, subsOut;
   
   local paramType::Type = freshType();
-  body.subsIn = top.subsIn;
-  top.subsOut = body.subsOut;
-  top.type = functionType(applySubs(body.subsOut, paramType), body.type);
+  top.type = functionType(paramType, body.type);
   top.value = right(closureValue(id, body, top.valueEnv));
   
-  body.env = pair(id, envItem(top.inQuote, paramType)) :: top.env;
+  body.env = pair(id, envItem(top.inQuote, [], paramType)) :: top.env;
 }
 
 abstract production appExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
-  
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  fCheck.subsIn = e2.subsOut;
-  top.subsOut = fCheck.subsOut;
   
   top.type = freshType();
-  local fCheck::Check =
-    typeCheck(freshenType(applySubs(e2.subsOut, e1.type)), functionType(e2.type, top.type), e1.location);
+  local fCheck::Check = typeCheck(e1.type, functionType(e2.type, top.type), e1.location);
   fCheck.subsFinal = top.subsFinal;
   top.errors <- fCheck.errors;
+  
+  thread subsIn, subsOut on top, e1, e2, fCheck, top;
   
   top.value =
     do {
@@ -145,8 +138,6 @@ abstract production ifExpr
 top::Expr ::= e1::Expr e2::Expr e3::Expr
 {
   top.pp = pp"(if ${e1.pp} then ${e2.pp} else ${e3.pp})";
-  top.freeVars = union(e1.freeVars, union(e2.freeVars, e3.freeVars));
-  top.errors := e1.errors ++ e2.errors ++ e3.errors;
   
   local cCheck::Check = typeCheck(e1.type, boolType(), e1.location);
   cCheck.subsFinal = top.subsFinal;
@@ -155,15 +146,9 @@ top::Expr ::= e1::Expr e2::Expr e3::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  e3.subsIn = e2.subsOut;
-  cCheck.subsIn = e3.subsOut;
-  rCheck.subsIn = cCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
+  thread subsIn, subsOut on top, e1, e2, e3, cCheck, rCheck, top;
   
   top.type = e2.type;
-  
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -179,15 +164,13 @@ abstract production quoteExpr
 top::Expr ::= e::Expr
 {
   top.pp = pp".<${e.pp}>.";
-  top.errors := e.errors;
   
-  e.subsIn = top.subsIn;
-  top.subsOut = e.subsOut;
+  propagate subsIn, subsOut;
+  
   top.type = codeType(e.type);
   
   local a::AST = reflect(new(e));
   a.valueEnv = top.valueEnv;
-  top.freeVars = a.freeVars;
   top.value =
     do {
       aVal::AST <- a.value;
@@ -201,19 +184,16 @@ abstract production escapeExpr
 top::Expr ::= e::Expr
 {
   top.pp = pp"(.~${e.pp})";
-  top.freeVars = error("undefined");
-  top.errors := e.errors;
+  top.freeVars <- error("undefined");
   
   local cType::Type = freshType();
   local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
   cCheck.subsFinal = top.subsFinal;
   top.errors <- cCheck.errors;
   
-  e.subsIn = top.subsIn;
-  cCheck.subsIn = e.subsOut;
-  top.subsOut = cCheck.subsOut;
-  top.type = cType;
+  thread subsIn, subsOut on top, e, cCheck, top;
   
+  top.type = cType;
   top.value = error("undefined");
   
   e.inQuote = false;
@@ -223,17 +203,13 @@ abstract production runExpr
 top::Expr ::= e::Expr
 {
   top.pp = pp"(.! ${e.pp})";
-  top.freeVars = e.freeVars;
-  top.errors := e.errors;
   
   local cType::Type = freshType();
   local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
   cCheck.subsFinal = top.subsFinal;
   top.errors <- cCheck.errors;
   
-  e.subsIn = top.subsIn;
-  cCheck.subsIn = e.subsOut;
-  top.subsOut = cCheck.subsOut;
+  thread subsIn, subsOut on top, e, cCheck, top;
   top.type = cType;
   
   top.value =
@@ -261,8 +237,6 @@ abstract production modExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} mod ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -271,13 +245,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = intType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = intType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -293,8 +263,6 @@ abstract production mulExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} * ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -303,13 +271,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = intType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = intType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -325,8 +289,6 @@ abstract production divExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} / ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -335,13 +297,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = intType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = intType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -358,8 +316,6 @@ abstract production addExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} + ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -368,13 +324,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = intType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = intType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -390,8 +342,6 @@ abstract production subExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} - ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -400,13 +350,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = intType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = intType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -422,8 +368,6 @@ abstract production eqExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} = ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -432,13 +376,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -455,8 +395,6 @@ abstract production neqExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <> ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -465,13 +403,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -488,8 +422,6 @@ abstract production gtExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} > ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -498,13 +430,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -520,8 +448,6 @@ abstract production gteExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} >= ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -530,13 +456,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -552,8 +474,6 @@ abstract production ltExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} < ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -562,13 +482,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -584,8 +500,6 @@ abstract production lteExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} <= ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, intType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -594,13 +508,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -616,8 +526,6 @@ abstract production andExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} && ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -626,13 +534,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
@@ -648,8 +552,6 @@ abstract production orExpr
 top::Expr ::= e1::Expr e2::Expr
 {
   top.pp = pp"(${e1.pp} || ${e2.pp})";
-  top.freeVars = union(e1.freeVars, e2.freeVars);
-  top.errors := e1.errors ++ e2.errors;
   
   local lCheck::Check = typeCheck(e1.type, boolType(), e1.location);
   lCheck.subsFinal = top.subsFinal;
@@ -658,13 +560,9 @@ top::Expr ::= e1::Expr e2::Expr
   rCheck.subsFinal = top.subsFinal;
   top.errors <- rCheck.errors;
   
-  e1.subsIn = top.subsIn;
-  e2.subsIn = e1.subsOut;
-  lCheck.subsIn = e2.subsOut;
-  rCheck.subsIn = lCheck.subsOut;
-  top.subsOut = rCheck.subsOut;
-  top.type = boolType();
+  thread subsIn, subsOut on top, e1, e2, lCheck, rCheck, top;
   
+  top.type = boolType();
   top.value =
     do {
       e1Val::Value <- e1.value;
