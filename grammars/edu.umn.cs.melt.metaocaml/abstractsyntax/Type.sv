@@ -7,12 +7,13 @@ synthesized attribute wrapPP::Boolean;
 type Subs = [Pair<String Type>];
 threaded attribute subsIn, subsOut :: Subs;
 inherited attribute subsFinal::Subs;
-unification attribute unifyWith {subsIn}, unifiesPartial, unifies;
+destruct attribute unifyWith;
+unification attribute unifiesPartial, unifies with unifyWith;
 synthesized attribute subsOutPartial::Subs;
 
 functor attribute substituted;
 
-nonterminal Type with pp, wrapPP, freeVars, unifyWith, unifiesPartial, unifies, subsIn, subsOut, subsOutPartial, subsFinal, substituted;
+nonterminal Type with pp, wrapPP, freeVars, unifyWith<{subsIn, unifyWith}>, unifiesPartial, unifies, subsIn, subsOut, subsOutPartial, subsFinal, substituted;
 
 propagate freeVars on Type;
 propagate unifyWith, unifies on Type;
