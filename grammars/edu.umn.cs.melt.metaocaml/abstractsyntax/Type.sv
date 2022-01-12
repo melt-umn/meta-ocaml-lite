@@ -165,7 +165,7 @@ String ::= subs::Subs
 function freshType
 Type ::=
 {
-  return varType("a" ++ toString(genInt()));
+  return varType("a" ++ toString(genIntT()));
 }
 
 function freshenType
