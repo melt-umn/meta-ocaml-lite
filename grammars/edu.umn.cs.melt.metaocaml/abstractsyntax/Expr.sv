@@ -67,8 +67,8 @@ top::Expr ::= id::String t::Expr body::Expr
   t.valueEnv = top.valueEnv;
   
   local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
-  body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, t.type))) :: top.env;
-  body.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
+  body.env = (id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, t.type))) :: top.env;
+  body.valueEnv = (id, t.value.fromRight) :: top.valueEnv;
 }
 
 abstract production letRecExpr
@@ -88,16 +88,16 @@ top::Expr ::= id::String t::Expr body::Expr
   top.value = applySecond(t.value, body.value);
   
   local polyVars::[String] = removeAll(envFreeVars(top.env), t.type.freeVars);
-  t.env = pair(id, envItem(top.inQuote, [], tType)) :: top.env;
-  t.valueEnv = pair(id, t.value.fromRight) :: top.valueEnv;
-  body.env = pair(id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, tType))) :: top.env;
+  t.env = (id, envItem(top.inQuote, [], tType)) :: top.env;
+  t.valueEnv = (id, t.value.fromRight) :: top.valueEnv;
+  body.env = (id, envItem(top.inQuote, polyVars, applySubs(t.subsOut, tType))) :: top.env;
   body.valueEnv = t.valueEnv;
 }
 
 abstract production lambdaExpr
 top::Expr ::= id::String body::Expr
 {
-  local unfolded::Pair<[String] Expr> = unfoldLambdaVars(top);
+  local unfolded::([String], Expr) = unfoldLambdaVars(top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
   top.freeVars := remove(id, body.freeVars);
   
@@ -107,7 +107,7 @@ top::Expr ::= id::String body::Expr
   top.type = functionType(paramType, body.type);
   top.value = right(closureValue(id, body, top.valueEnv));
   
-  body.env = pair(id, envItem(top.inQuote, [], paramType)) :: top.env;
+  body.env = (id, envItem(top.inQuote, [], paramType)) :: top.env;
 }
 
 abstract production appExpr
@@ -128,7 +128,7 @@ top::Expr ::= e1::Expr e2::Expr
       e2Val::Value <- e2.value;
       case e1Val of
       | closureValue(id, body, env) ->
-        decorate body with {valueEnv = pair(id, e2Val) :: env;}.value
+        decorate body with {valueEnv = (id, e2Val) :: env;}.value
       | _ -> error("expected a closure value")
       end;
     };
@@ -575,14 +575,14 @@ top::Expr ::= e1::Expr e2::Expr
 }
 
 function unfoldLambdaVars
-Pair<[String] Expr> ::= t::Expr
+([String], Expr) ::= t::Expr
 {
   return
     case t of
     | lambdaExpr(n, body) ->
-      let rest::Pair<[String] Expr> = unfoldLambdaVars(body)
-      in pair(n :: rest.fst, rest.snd)
+      let rest::([String], Expr) = unfoldLambdaVars(body)
+      in (n :: rest.fst, rest.snd)
       end
-    | _ -> pair([], t)
+    | _ -> ([], t)
     end;
 }

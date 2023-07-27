@@ -11,7 +11,7 @@ parser parse::Expr_c {
 }
 
 function eval
-Pair<String Integer> ::= e::Expr
+(String, Integer) ::= e::Expr
 {
   e.inQuote = false;
   e.env = [];
@@ -21,10 +21,10 @@ Pair<String Integer> ::= e::Expr
   
   return
     if !null(e.errors)
-    then pair(s"Errors:\n${messagesToString(e.errors)}\n", 4)
+    then (s"Errors:\n${messagesToString(e.errors)}\n", 4)
     else case e.value of
-    | left(msg) -> pair(s"Runtime error:\n${msg.output}\n", 5)
-    | right(v) -> pair(s"${show(80, v.pp)} : ${show(80, applySubs(e.subsFinal, e.type).pp)}\n", 0)
+    | left(msg) -> (s"Runtime error:\n${msg.output}\n", 5)
+    | right(v) -> (s"${show(80, v.pp)} : ${show(80, applySubs(e.subsFinal, e.type).pp)}\n", 0)
     end;
 }
 
@@ -49,7 +49,7 @@ IOVal<Integer> ::= args::[String] ioIn::IOToken
           return 3;
         } else do {
           let ast::Expr = result.parseTree.ast;
-          let result::Pair<String Integer> = eval(ast);
+          let result::(String, Integer) = eval(ast);
           print(result.fst);
           return result.snd;
         };
