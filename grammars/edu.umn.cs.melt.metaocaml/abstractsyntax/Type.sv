@@ -8,7 +8,7 @@ type Subs = [Pair<String Type>];
 threaded attribute subsIn, subsOut :: Subs;
 inherited attribute subsFinal::Subs;
 destruct attribute unifyWith;
-unification attribute unifiesPartial, unifies with unifyWith;
+biequality attribute unifiesPartial, unifies with unifyWith;
 synthesized attribute subsOutPartial::Subs;
 
 functor attribute substituted;
