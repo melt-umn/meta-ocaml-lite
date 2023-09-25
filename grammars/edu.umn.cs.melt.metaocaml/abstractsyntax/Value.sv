@@ -1,6 +1,6 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-inherited attribute valueEnv::[Pair<String Value>];
+inherited attribute valueEnv::[(String, Value)];
 synthesized attribute value<a>::Either<Message a>;
 
 nonterminal Value with pp;
@@ -18,7 +18,7 @@ top::Value ::= b::Boolean
 }
 
 abstract production closureValue
-top::Value ::= id::String body::Expr env::[Pair<String Value>]
+top::Value ::= id::String body::Expr env::[(String, Value)]
 {
   top.pp = pp"<fun>";
 }

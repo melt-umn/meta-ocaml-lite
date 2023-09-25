@@ -4,7 +4,7 @@ synthesized attribute type::Type;
 
 synthesized attribute wrapPP::Boolean;
 
-type Subs = [Pair<String Type>];
+type Subs = [(String, Type)];
 threaded attribute subsIn, subsOut :: Subs;
 inherited attribute subsFinal::Subs;
 destruct attribute unifyWith;
@@ -64,7 +64,7 @@ top::Type ::= n::String
     case top.unifyWith of
     | varType(n1) when n == n1 -> []
     | _ when isBound -> boundType.subsOut
-    | _ -> pair(n, otherType) :: top.subsIn
+    | _ -> (n, otherType) :: top.subsIn
     end;
 
   top.substituted =
@@ -171,7 +171,7 @@ Type ::=
 function freshenType
 Type ::= vars::[String] a::Type
 {
-  return applySubs(zipWith(pair, vars, map(\ String -> freshType(), vars)), a);
+  return applySubs(zip(vars, map(\ String -> freshType(), vars)), a);
 }
 
 function maybeWrapTypePP

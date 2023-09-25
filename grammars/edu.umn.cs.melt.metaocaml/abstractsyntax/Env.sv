@@ -1,6 +1,6 @@
 grammar edu:umn:cs:melt:metaocaml:abstractsyntax;
 
-type Env = [Pair<String EnvItem>];
+type Env = [(String, EnvItem)];
 inherited attribute env::Env;
 synthesized attribute polyVars::[String];
 synthesized attribute defInQuote::Boolean;
