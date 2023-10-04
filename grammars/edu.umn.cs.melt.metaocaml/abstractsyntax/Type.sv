@@ -171,7 +171,7 @@ Type ::=
 function freshenType
 Type ::= vars::[String] a::Type
 {
-  return applySubs(zip(vars, map(\ String -> freshType(), vars)), a);
+  return applySubs(zip(vars, map(\ _ -> freshType(), vars)), a);
 }
 
 function maybeWrapTypePP
