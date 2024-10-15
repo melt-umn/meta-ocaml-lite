@@ -64,13 +64,13 @@ top::Type ::= n::String
     case top.unifyWith of
     | varType(n1) when n == n1 -> []
     | _ when isBound -> boundType.subsOut
-    | _ -> (n, otherType) :: top.subsIn
+    | _ -> (n, ^otherType) :: top.subsIn
     end;
 
   top.substituted =
     case lookup(n, top.subsFinal) of
     | just(a) -> applySubs(top.subsFinal, a)
-    | nothing() -> top
+    | nothing() -> ^top
     end;
 }
 
@@ -102,7 +102,7 @@ top::Type ::=
 abstract production functionType
 top::Type ::= a::Type b::Type
 {
-  top.pp = pp"${maybeWrapTypePP(a)} -> ${b.pp}";
+  top.pp = pp"${maybeWrapTypePP(^a)} -> ${b.pp}";
   top.wrapPP = true;
 
   thread subsIn, subsOut on top, a, b;
@@ -112,7 +112,7 @@ top::Type ::= a::Type b::Type
 abstract production codeType
 top::Type ::= a::Type
 {
-  top.pp = pp"${maybeWrapTypePP(a)} code";
+  top.pp = pp"${maybeWrapTypePP(^a)} code";
   top.wrapPP = true;
 
   thread subsIn, subsOut on top, a;
@@ -130,8 +130,8 @@ top::Check ::= a::Type b::Type loc::Location
   b.unifyWith = a;
   thread subsIn, subsOut on top, a, top;
   thread subsIn, subsOut on top, b;
-  local finalA::Type = applySubs(top.subsFinal, a);
-  local finalB::Type = applySubs(top.subsFinal, b);
+  local finalA::Type = applySubs(top.subsFinal, ^a);
+  local finalB::Type = applySubs(top.subsFinal, ^b);
   top.errors :=
     if a.unifies
     then []
@@ -156,23 +156,13 @@ Type ::= s::Subs t::Type
   return t.substituted;
 }
 
-function showSubs
-String ::= subs::Subs
-{
-  return implode(", ", map(\ s::Pair<String Type> -> s"${s.fst} = ${show(80, s.snd.pp)}", subs));
-}
+fun showSubs String ::= subs::Subs =
+  implode(", ", map(\ s::Pair<String Type> -> s"${s.fst} = ${show(80, s.snd.pp)}", subs));
 
-function freshType
-Type ::=
-{
-  return varType("a" ++ toString(genInt()));
-}
+fun freshType Type ::= = varType("a" ++ toString(genInt()));
 
-function freshenType
-Type ::= vars::[String] a::Type
-{
-  return applySubs(zip(vars, map(\ _ -> freshType(), vars)), a);
-}
+fun freshenType Type ::= vars::[String] a::Type =
+  applySubs(zip(vars, map(\ _ -> freshType(), vars)), a);
 
 function maybeWrapTypePP
 Document ::= a::Type

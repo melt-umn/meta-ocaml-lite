@@ -26,7 +26,7 @@ top::Value ::= id::String body::Expr env::[(String, Value)]
 abstract production codeValue
 top::Value ::= a::AST
 {
-  local e::Expr = reify(a).fromRight;
+  local e::Expr = reify(^a).fromRight;
   top.pp = pp".<${e.pp}>.";
 }
 
@@ -41,7 +41,7 @@ propagate freeVars on AST, ASTs, NamedAST, NamedASTs excluding nonterminalAST;
 aspect default production
 top::AST ::=
 {
-  top.value = right(top);
+  top.value = right(^top);
 }
 
 aspect production nonterminalAST
@@ -51,7 +51,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
     prodName == "edu:umn:cs:melt:metaocaml:abstractsyntax:escapeExpr";
   local escape::Expr =
     case children of
-    | consAST(a, nilAST()) -> reify(a).fromRight
+    | consAST(a, nilAST()) -> reify(^a).fromRight
     | _ -> error("Invalid AST for escapeExpr")
     end;
   escape.valueEnv = top.valueEnv;
@@ -67,7 +67,7 @@ top::AST ::= prodName::String children::ASTs annotations::NamedASTs
         escapeVal::Value <- escape.value;
         return
           case escapeVal of
-          | codeValue(a) -> a
+          | codeValue(a) -> ^a
           | _ -> error("expected an ast value")
           end;
       }

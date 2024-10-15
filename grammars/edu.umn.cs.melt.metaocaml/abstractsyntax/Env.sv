@@ -12,12 +12,8 @@ top::EnvItem ::= inQuote::Boolean polyVars::[String] type::Type
 {
   top.defInQuote = inQuote;
   top.polyVars = polyVars;
-  top.type = type;
+  top.type = ^type;
   propagate freeVars;
 }
 
-function envFreeVars
-[String] ::= e::Env
-{
-  return unions(map((.freeVars), map(snd, e)));
-}
+fun envFreeVars [String] ::= e::Env = unions(map((.freeVars), map(snd, e)));

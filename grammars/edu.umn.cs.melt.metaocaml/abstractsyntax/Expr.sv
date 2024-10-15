@@ -77,7 +77,7 @@ top::Expr ::= id::String t::Expr body::Expr
   top.pp = pp"(let rec ${text(id)} = ${t.pp} in ${body.pp})";
   top.freeVars := remove(id, union(t.freeVars, body.freeVars));
   
-  local tType::Type = freshType();
+  nondecorated local tType::Type = freshType();
   local tCheck::Check = typeCheck(tType, t.type, t.location);
   tCheck.subsFinal = top.subsFinal;
   top.errors <- tCheck.errors;
@@ -97,15 +97,15 @@ top::Expr ::= id::String t::Expr body::Expr
 abstract production lambdaExpr
 top::Expr ::= id::String body::Expr
 {
-  local unfolded::([String], Expr) = unfoldLambdaVars(top);
+  local unfolded::([String], Expr) = unfoldLambdaVars(^top);
   top.pp = pp"(fun ${ppImplode(space(), map(text, unfolded.fst))} -> ${unfolded.snd.pp})";
   top.freeVars := remove(id, body.freeVars);
   
   propagate subsIn, subsOut;
   
-  local paramType::Type = freshType();
+  nondecorated local paramType::Type = freshType();
   top.type = functionType(paramType, body.type);
-  top.value = right(closureValue(id, body, top.valueEnv));
+  top.value = right(closureValue(id, ^body, top.valueEnv));
   
   body.env = (id, envItem(top.inQuote, [], paramType)) :: top.env;
 }
@@ -128,7 +128,7 @@ top::Expr ::= e1::Expr e2::Expr
       e2Val::Value <- e2.value;
       case e1Val of
       | closureValue(id, body, env) ->
-        decorate body with {valueEnv = (id, e2Val) :: env;}.value
+        decorate ^body with {valueEnv = (id, e2Val) :: env;}.value
       | _ -> error("expected a closure value")
       end;
     };
@@ -186,7 +186,7 @@ top::Expr ::= e::Expr
   top.pp = pp"(.~${e.pp})";
   top.freeVars <- error("undefined");
   
-  local cType::Type = freshType();
+  nondecorated local cType::Type = freshType();
   local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
   cCheck.subsFinal = top.subsFinal;
   top.errors <- cCheck.errors;
@@ -204,7 +204,7 @@ top::Expr ::= e::Expr
 {
   top.pp = pp"(.! ${e.pp})";
   
-  local cType::Type = freshType();
+  nondecorated local cType::Type = freshType();
   local cCheck::Check = typeCheck(e.type, codeType(cType), e.location);
   cCheck.subsFinal = top.subsFinal;
   top.errors <- cCheck.errors;
@@ -218,7 +218,7 @@ top::Expr ::= e::Expr
       let e1::Expr =
         case eVal of
         | codeValue(a) ->
-          case reify(a) of
+          case reify(^a) of
           | left(msg) -> error(s"Reification of ${show(80, a.pp)} failed: ${msg}")
           | right(e1) -> e1
           end
@@ -574,15 +574,11 @@ top::Expr ::= e1::Expr e2::Expr
     };
 }
 
-function unfoldLambdaVars
-([String], Expr) ::= t::Expr
-{
-  return
-    case t of
-    | lambdaExpr(n, body) ->
-      let rest::([String], Expr) = unfoldLambdaVars(body)
-      in (n :: rest.fst, rest.snd)
-      end
-    | _ -> ([], t)
-    end;
-}
+fun unfoldLambdaVars ([String], Expr) ::= t::Expr =
+  case t of
+  | lambdaExpr(n, body) ->
+    let rest::([String], Expr) = unfoldLambdaVars(^body)
+    in (n :: rest.fst, rest.snd)
+    end
+  | _ -> ([], t)
+  end;
